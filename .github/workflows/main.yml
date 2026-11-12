@@ -25,9 +25,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
 
       - name: Build APK
         run: |
@@ -41,4 +43,3 @@ jobs:
         with:
           name: Organizer-APK
           path: Organizer_Android/app/build/outputs/apk/debug/app-debug.apk
-          
