@@ -1,4 +1,3 @@
-
 name: Build Organizer APK
 
 on:
@@ -9,20 +8,50 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Extract Android project
+      - name: Prepare Organizer Android project
         run: |
-          ZIP_FILE=$(find . -maxdepth 2 -type f -iname '*Android_Project*.zip' | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "Project ZIP not found"
-            exit 1
+          set -e
+          mkdir -p app/src/main/assets app/src/main/java/com/momen/organizer
+          HTML=$(find . -maxdepth 3 -type f -iname '*.html' ! -path './app/*' | head -n 1)
+          if [ -z "$HTML" ]; then
+            ZIP=$(find . -maxdepth 2 -type f -iname '*Android_Project*.zip' | head -n 1)
+            if [ -n "$ZIP" ]; then
+              mkdir extracted && unzip -o "$ZIP" -d extracted
+              HTML=$(find extracted -type f -iname '*.html' | head -n 1)
+            fi
           fi
-          mkdir -p project
-          unzip -o "$ZIP_FILE" -d project
+          if [ -z "$HTML" ]; then echo 'No Organizer HTML file found'; exit 1; fi
+          cp "$HTML" app/src/main/assets/index.html
+          cat > settings.gradle <<'GRADLE'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = 'Organizer'
+          include ':app'
+          GRADLE
+          cat > build.gradle <<'GRADLE'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          GRADLE
+          cat > app/build.gradle <<'GRADLE'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.momen.organizer'
+              compileSdk 35
+              defaultConfig { applicationId 'com.momen.organizer'; minSdk 23; targetSdk 35; versionCode 1; versionName '1.0' }
+          }
+          GRADLE
+          cat > app/src/main/AndroidManifest.xml <<'XML'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Organizer" android:usesCleartextTraffic="true"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>
+          XML
+          cat > app/src/main/java/com/momen/organizer/MainActivity.java <<'JAVA'
+          package com.momen.organizer;
+          import android.app.Activity; import android.os.Bundle; import android.webkit.WebView; import android.webkit.WebSettings;
+          public class MainActivity extends Activity { public void onCreate(Bundle b){ super.onCreate(b); WebView w=new WebView(this); WebSettings s=w.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); w.setWebChromeClient(new android.webkit.WebChromeClient()); w.loadUrl("file:///android_asset/index.html"); setContentView(w); } }
+          JAVA
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -30,26 +59,23 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 'latest'
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Install SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
 
       - name: Build APK
-        run: |
-          GRADLE=$(find project -type f -name gradlew | head -n 1)
-          if [ -z "$GRADLE" ]; then
-            echo "gradlew not found in project ZIP"
-            exit 1
-          fi
-          chmod +x "$GRADLE"
-          cd "$(dirname "$GRADLE")"
-          ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Organizer-APK
-          path: project/**/build/outputs/apk/debug/*.apk
+          name: Organizer-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
