@@ -2,10 +2,9 @@
 name: Build Organizer APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,14 +14,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find Android ZIP
+      - name: Extract Android project
         run: |
-          ZIP_FILE=$(find . -maxdepth 2 -type f -name 'Organizer_Android_Project*.zip' | head -n 1)
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname '*Android_Project*.zip' | head -n 1)
           if [ -z "$ZIP_FILE" ]; then
-            echo "Android ZIP not found"
+            echo "Project ZIP not found"
             exit 1
           fi
-          mkdir project
+          mkdir -p project
           unzip -o "$ZIP_FILE" -d project
 
       - name: Setup Java
@@ -33,12 +32,15 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 'latest'
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Build APK
         run: |
           GRADLE=$(find project -type f -name gradlew | head -n 1)
           if [ -z "$GRADLE" ]; then
-            echo "Gradle wrapper not found"
+            echo "gradlew not found in project ZIP"
             exit 1
           fi
           chmod +x "$GRADLE"
